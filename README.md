@@ -36,7 +36,7 @@ dist:
 
 receivers:
   - gomod:
-      github.com/skilld-labs/railigentxotelreceiver v1.0.0
+      github.com/skilld-labs/railigentxotelreceiver v1.0.10
 
 exporters:
   - gomod:
