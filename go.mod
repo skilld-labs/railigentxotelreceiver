@@ -3,7 +3,9 @@ module github.com/skilld-labs/railigentxotelreceiver
 go 1.21
 
 require (
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/skilld-labs/go-railigentx v0.0.1
+	go.etcd.io/bbolt v1.3.10
 	go.opentelemetry.io/collector/component v0.100.0
 	go.opentelemetry.io/collector/consumer v0.100.0
 	go.opentelemetry.io/collector/pdata v1.7.0

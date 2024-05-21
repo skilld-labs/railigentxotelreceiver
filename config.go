@@ -6,10 +6,16 @@ import (
 )
 
 type Config struct {
-	BaseURL        string        `mapstructure:"baseURL"`
-	Username       string        `mapstructure:"username"`
-	Password       string        `mapstructure:"password"`
-	ScrapeInterval time.Duration `mapstructure:"scrapeInterval"`
+	BaseURL               string                      `mapstructure:"base_url"`
+	Username              string                      `mapstructure:"username"`
+	Password              string                      `mapstructure:"password"`
+	ScrapeInterval        time.Duration               `mapstructure:"scrape_interval"`
+	AssetMetricRepository AssetMetricRepositoryConfig `mapstructure:"asset_metric_repository"`
+}
+
+type AssetMetricRepositoryConfig struct {
+	Name   string      `mapstructure:"name"`
+	Config interface{} `mapstructure:"config"`
 }
 
 func (cfg *Config) Validate() error {

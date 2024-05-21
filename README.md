@@ -70,10 +70,14 @@ The receiver requires a configuration file to specify settings such as the Raili
 ```yaml
 receivers:
   railigentx:
-    baseURL: "https://api.railigentx.com"
+    base_url: "https://api.railigentx.com"
     username: yourusername
     password: yourpassword
     scrapeInterval: 10s
+    asset_metric_repository:
+      name: bbolt
+      config:
+        db_path: /tmp/db
 
 exporters:
   prometheus:
@@ -93,10 +97,22 @@ service:
 
 ### Configuration Options
 
-- `baseURL`: The RailigentX API base URL.
+- `base_url`: The RailigentX API base URL.
 - `username`: Your RailigentX username.
 - `password`: Your RailigentX password.
 - `scrape_interval`: The interval at which the receiver scrapes metrics from RailigentX (e.g., `60s` for 60 seconds).
+- `asset_metric_repository`: This is the configuration for keeping metrics timestamps informations and avoid sending multiple times metrics points that have already been collected. There are currently two implementations: [inmem](#inmem-repository) and [bbolt](#bbolt-repository).
+
+#### Inmem Repository
+
+The Inmem repository will keep metrics timestamps in memory. It doesn't require any storage space, but as a side effect, it could send multiple times the same metrics informations in case of restart of the application.
+
+#### Bbolt Repository
+
+The Bbolt repository will keep metrics timestamps in a dedicated db file. In case of application restart, it will use this database to know if metrics has been already send or not.
+Configuration:
+
+- `db_path`: The path of the file where database will be stored.
 
 ## Logging
 

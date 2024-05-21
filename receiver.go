@@ -8,6 +8,7 @@ import (
 	"github.com/skilld-labs/go-railigentx"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
 )
@@ -19,7 +20,8 @@ type railigentXReceiver struct {
 	config       *Config
 	nextConsumer consumer.Metrics
 
-	railigentxClient *railigentx.Client
+	railigentxClient      *railigentx.Client
+	assetMetricRepository AssetMetricRepository
 }
 
 func (receiver *railigentXReceiver) Start(ctx context.Context, host component.Host) error {
@@ -44,8 +46,10 @@ func (receiver *railigentXReceiver) scrapeMetricsLoop(ctx context.Context) {
 	for {
 		receiver.logger.Info("Scraping metrics")
 		metricsScrape, err := newMetricsScrape(&metricsScrapeConfig{
-			logger:           receiver.logger.Named("metrics_scrape"),
-			railigentxClient: receiver.railigentxClient,
+			logger:                receiver.logger.Named("metrics_scrape"),
+			railigentxClient:      receiver.railigentxClient,
+			scrapeInterval:        receiver.config.ScrapeInterval,
+			assetMetricRepository: receiver.assetMetricRepository,
 		})
 		if err != nil {
 			receiver.logger.Error("Error while creating new metrics scrape", zap.Error(err))
@@ -74,18 +78,27 @@ func (receiver *railigentXReceiver) scrapeMetricsLoop(ctx context.Context) {
 }
 
 type metricsScrape struct {
-	logger           *zap.Logger
-	railigentxClient *railigentx.Client
+	logger                *zap.Logger
+	railigentxClient      *railigentx.Client
+	scrapeInterval        time.Duration
+	assetMetricRepository AssetMetricRepository
 }
 
 type metricsScrapeConfig struct {
-	logger           *zap.Logger
-	railigentxClient *railigentx.Client
+	logger                *zap.Logger
+	railigentxClient      *railigentx.Client
+	scrapeInterval        time.Duration
+	assetMetricRepository AssetMetricRepository
 }
 
 func newMetricsScrape(cfg *metricsScrapeConfig) (*metricsScrape, error) {
 	cfg.logger.Info("Creating new Metrics Scrape instance")
-	return &metricsScrape{logger: cfg.logger, railigentxClient: cfg.railigentxClient}, nil
+	return &metricsScrape{
+		logger:                cfg.logger,
+		railigentxClient:      cfg.railigentxClient,
+		scrapeInterval:        cfg.scrapeInterval,
+		assetMetricRepository: cfg.assetMetricRepository,
+	}, nil
 }
 
 func (scrape *metricsScrape) generateMetrics() (pmetric.Metrics, error) {
@@ -144,37 +157,85 @@ func (scrape *metricsScrape) collectAssetMetrics(metrics pmetric.Metrics, fleet 
 	assetInstScope := resourceMetric.ScopeMetrics().AppendEmpty()
 
 	if asset.Features.GPS != nil {
-		latitudeMetric := assetInstScope.Metrics().AppendEmpty()
-		latitudeMetric.SetName("asset_gps_latitude")
-		latitudeMetric.SetDescription("The asset GPS latitude, in degree of arc")
-		latitudeMetric.SetUnit("deg")
-		latitudeMetric.SetEmptyGauge()
-		latitudeMetric.Gauge().DataPoints().AppendEmpty().SetDoubleValue(asset.Features.GPS.Position.Latitude)
+		am := &AssetMetric{Asset: asset.ID, Metric: "asset_gps_latitude"}
+		oldTs, exists, err := scrape.assetMetricRepository.Get(am)
+		if err != nil {
+			scrape.logger.Error("error while accessing asset metric repository", zap.String("asset_id", asset.ID), zap.Error(err))
+		} else {
+			newTs := time.UnixMilli(asset.Features.GPS.Timestamp)
+			if !exists || !newTs.Add(-scrape.scrapeInterval).Before(oldTs) {
+				scrape.assetMetricRepository.Store(am, newTs)
+				latitudeMetric := assetInstScope.Metrics().AppendEmpty()
+				latitudeMetric.SetName("asset_gps_latitude")
+				latitudeMetric.SetDescription("The asset GPS latitude, in degree of arc")
+				latitudeMetric.SetUnit("deg")
+				latitudeMetric.SetEmptyGauge()
+				point := latitudeMetric.Gauge().DataPoints().AppendEmpty()
+				point.SetTimestamp(pcommon.NewTimestampFromTime(newTs))
+				point.SetDoubleValue(asset.Features.GPS.Position.Latitude)
+			}
+		}
 
-		longitudeMetric := assetInstScope.Metrics().AppendEmpty()
-		longitudeMetric.SetName("asset_gps_longitude")
-		longitudeMetric.SetUnit("deg")
-		longitudeMetric.SetDescription("The asset GPS longitude, in degree of arc")
-		longitudeMetric.SetEmptyGauge()
-		longitudeMetric.Gauge().DataPoints().AppendEmpty().SetDoubleValue(asset.Features.GPS.Position.Longitude)
+		am = &AssetMetric{Asset: asset.ID, Metric: "asset_gps_longitude"}
+		oldTs, exists, err = scrape.assetMetricRepository.Get(am)
+		if err != nil {
+			scrape.logger.Error("error while accessing asset metric repository", zap.String("asset_id", asset.ID), zap.Error(err))
+		} else {
+			newTs := time.UnixMilli(asset.Features.GPS.Timestamp)
+			if !exists || !newTs.Add(-scrape.scrapeInterval).Before(oldTs) {
+				scrape.assetMetricRepository.Store(am, newTs)
+				longitudeMetric := assetInstScope.Metrics().AppendEmpty()
+				longitudeMetric.SetName("asset_gps_longitude")
+				longitudeMetric.SetDescription("The asset GPS longitude, in degree of arc")
+				longitudeMetric.SetUnit("deg")
+				longitudeMetric.SetEmptyGauge()
+				point := longitudeMetric.Gauge().DataPoints().AppendEmpty()
+				point.SetTimestamp(pcommon.NewTimestampFromTime(newTs))
+				point.SetDoubleValue(asset.Features.GPS.Position.Longitude)
+			}
+		}
 	}
 
 	if asset.Features.Mileage != nil {
-		mileageMetric := assetInstScope.Metrics().AppendEmpty()
-		mileageMetric.SetName("asset_mileage")
-		mileageMetric.SetUnit("km")
-		mileageMetric.SetDescription("The asset mileage, in kilometers.")
-		mileageMetric.SetEmptyGauge()
-		mileageMetric.Gauge().DataPoints().AppendEmpty().SetDoubleValue(asset.Features.Mileage.Value)
+		am := &AssetMetric{Asset: asset.ID, Metric: "asset_mileage"}
+		oldTs, exists, err := scrape.assetMetricRepository.Get(am)
+		if err != nil {
+			scrape.logger.Error("error while accessing asset metric repository", zap.String("asset_id", asset.ID), zap.Error(err))
+		} else {
+			newTs := time.UnixMilli(asset.Features.Mileage.Timestamp)
+			if !exists || !newTs.Add(-scrape.scrapeInterval).Before(oldTs) {
+				scrape.assetMetricRepository.Store(am, newTs)
+				mileageMetric := assetInstScope.Metrics().AppendEmpty()
+				mileageMetric.SetName("asset_mileage")
+				mileageMetric.SetUnit("km")
+				mileageMetric.SetDescription("The asset mileage, in kilometers.")
+				mileageMetric.SetEmptyGauge()
+				point := mileageMetric.Gauge().DataPoints().AppendEmpty()
+				point.SetTimestamp(pcommon.NewTimestampFromTime(newTs))
+				point.SetDoubleValue(asset.Features.Mileage.Value)
+			}
+		}
 	}
 
 	if asset.Features.Speed != nil {
-		speedMetric := assetInstScope.Metrics().AppendEmpty()
-		speedMetric.SetName("asset_speed")
-		speedMetric.SetUnit("km/h")
-		speedMetric.SetDescription("The asset speed, in kilometers per hour.")
-		speedMetric.SetEmptyGauge()
-		speedMetric.Gauge().DataPoints().AppendEmpty().SetDoubleValue(asset.Features.Speed.Value)
+		am := &AssetMetric{Asset: asset.ID, Metric: "asset_speed"}
+		oldTs, exists, err := scrape.assetMetricRepository.Get(am)
+		if err != nil {
+			scrape.logger.Error("error while accessing asset metric repository", zap.String("asset_id", asset.ID), zap.Error(err))
+		} else {
+			newTs := time.UnixMilli(asset.Features.Speed.Timestamp)
+			if !exists || !newTs.Add(-scrape.scrapeInterval).Before(oldTs) {
+				scrape.assetMetricRepository.Store(am, newTs)
+				speedMetric := assetInstScope.Metrics().AppendEmpty()
+				speedMetric.SetName("asset_speed")
+				speedMetric.SetUnit("km/h")
+				speedMetric.SetDescription("The asset speed, in kilometers per hour.")
+				speedMetric.SetEmptyGauge()
+				point := speedMetric.Gauge().DataPoints().AppendEmpty()
+				point.SetTimestamp(pcommon.NewTimestampFromTime(newTs))
+				point.SetDoubleValue(asset.Features.Speed.Value)
+			}
+		}
 	}
 	return nil
 }
