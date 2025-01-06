@@ -36,7 +36,7 @@ dist:
 
 receivers:
   - gomod:
-      github.com/skilld-labs/railigentxotelreceiver v1.0.10
+      github.com/skilld-labs/railigentxotelreceiver v1.0.12
 
 exporters:
   - gomod:
@@ -47,7 +47,7 @@ To build and run the custom collector:
 
 1. Install the OpenTelemetry Collector builder:
    ```bash
-   go install go.opentelemetry.io/collector/cmd/builder@latest
+   go install go.opentelemetry.io/collector/cmd/builder@v0.100.0
    ```
    Click [here](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder) for more details
 
@@ -73,7 +73,7 @@ receivers:
     base_url: "https://api.railigentx.com"
     username: yourusername
     password: yourpassword
-    scrapeInterval: 10s
+    scrape_interval: 10s
     asset_metric_repository:
       name: bbolt
       config:
